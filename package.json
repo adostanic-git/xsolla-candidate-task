@@ -1,0 +1,17 @@
+{
+  "name": "ai-diff-review-service",
+  "version": "1.0.0",
+  "description": "AI diff review service - accepts a unified diff, reviews it asynchronously via a pluggable provider (mock or llm), and returns structured findings.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node test/smoke.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "license": "MIT"
+}
