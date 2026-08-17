@@ -1,35 +1,39 @@
 // Real-LLM provider. Model access/credentials live entirely on this server
-// via env vars (see src/config.js). If the model is unreachable or
-// misconfigured, this throws a descriptive Error - the caller (jobRunner)
-// catches it and marks the job "failed" with a clear message. It must never
-// crash the process.
+// via env vars (see src/config.js). Any OpenAI-compatible chat-completions
+// endpoint works (LLM_BASE_URL/LLM_MODEL); currently pointed at Groq. If the
+// model is unreachable or misconfigured, this throws a descriptive Error -
+// the caller (jobRunner) catches it and marks the job "failed" with a clear
+// message. It must never crash the process.
 
 const config = require('../config');
 
 const FINDING_TOOL = {
-  name: 'report_findings',
-  description: 'Report code review findings for the added lines of a unified diff.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      findings: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            path: { type: 'string' },
-            line: { type: 'integer' },
-            severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
-            category: { type: 'string', enum: ['security', 'correctness', 'performance', 'style'] },
-            title: { type: 'string' },
-            evidence: { type: 'string' },
-            ruleId: { type: 'string' },
+  type: 'function',
+  function: {
+    name: 'report_findings',
+    description: 'Report code review findings for the added lines of a unified diff.',
+    parameters: {
+      type: 'object',
+      properties: {
+        findings: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+              line: { type: 'integer' },
+              severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
+              category: { type: 'string', enum: ['security', 'correctness', 'performance', 'style'] },
+              title: { type: 'string' },
+              evidence: { type: 'string' },
+              ruleId: { type: 'string' },
+            },
+            required: ['path', 'line', 'severity', 'category', 'title', 'evidence'],
           },
-          required: ['path', 'line', 'severity', 'category', 'title', 'evidence'],
         },
       },
+      required: ['findings'],
     },
-    required: ['findings'],
   },
 };
 
@@ -47,7 +51,7 @@ function buildPrompt(files) {
 
 async function runLlm(files) {
   if (!config.LLM.apiKey) {
-    throw new Error('llm provider not configured: ANTHROPIC_API_KEY is not set on the server');
+    throw new Error('llm provider not configured: LLM_API_KEY is not set on the server');
   }
 
   const controller = new AbortController();
@@ -55,19 +59,18 @@ async function runLlm(files) {
 
   let response;
   try {
-    response = await fetch('https://api.anthropic.com/v1/messages', {
+    response = await fetch(config.LLM.baseUrl, {
       method: 'POST',
       signal: controller.signal,
       headers: {
         'content-type': 'application/json',
-        'x-api-key': config.LLM.apiKey,
-        'anthropic-version': '2023-06-01',
+        authorization: `Bearer ${config.LLM.apiKey}`,
       },
       body: JSON.stringify({
         model: config.LLM.model,
         max_tokens: 4096,
         tools: [FINDING_TOOL],
-        tool_choice: { type: 'tool', name: 'report_findings' },
+        tool_choice: { type: 'function', function: { name: 'report_findings' } },
         messages: [{ role: 'user', content: buildPrompt(files) }],
       }),
     });
@@ -83,12 +86,19 @@ async function runLlm(files) {
   }
 
   const data = await response.json();
-  const toolUse = (data.content || []).find((b) => b.type === 'tool_use' && b.name === 'report_findings');
-  if (!toolUse) {
+  const call = data.choices?.[0]?.message?.tool_calls?.[0];
+  if (!call) {
     throw new Error('llm provider returned no structured findings');
   }
 
-  const rawFindings = Array.isArray(toolUse.input.findings) ? toolUse.input.findings : [];
+  let parsed;
+  try {
+    parsed = JSON.parse(call.function.arguments);
+  } catch {
+    throw new Error('llm provider returned malformed tool arguments');
+  }
+
+  const rawFindings = Array.isArray(parsed.findings) ? parsed.findings : [];
 
   const seen = new Set();
   const findings = [];

@@ -23,8 +23,9 @@ module.exports = {
   BURST_LIMIT,
   MAX_FINDINGS_DEFAULT,
   LLM: {
-    apiKey: process.env.ANTHROPIC_API_KEY || '',
-    model: process.env.LLM_MODEL || 'claude-3-5-haiku-20241022',
+    apiKey: process.env.LLM_API_KEY || '',
+    baseUrl: process.env.LLM_BASE_URL || 'https://api.groq.com/openai/v1/chat/completions',
+    model: process.env.LLM_MODEL || 'openai/gpt-oss-120b',
     timeoutMs: parseInt(process.env.LLM_TIMEOUT_MS, 10) || 20000,
   },
 };

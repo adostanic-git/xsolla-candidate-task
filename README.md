@@ -31,8 +31,9 @@ curl -X POST http://localhost:3000/v1/reviews \
 |----------------------|----------|----------------------------------------------------------------|
 | `AUTH_TOKEN`          | yes      | Bearer token required on all `/v1/*` routes                    |
 | `PORT`                | no       | HTTP port (default `3000`)                                     |
-| `ANTHROPIC_API_KEY`   | no       | Enables the `llm` provider (Anthropic Messages API). If unset, `llm` jobs fail gracefully with a `failed` status and a clear error. |
-| `LLM_MODEL`           | no       | Anthropic model id (default `claude-3-5-haiku-20241022`)       |
+| `LLM_API_KEY`         | no       | Enables the `llm` provider. If unset, `llm` jobs fail gracefully with a `failed` status and a clear error. |
+| `LLM_BASE_URL`        | no       | OpenAI-compatible chat-completions endpoint, currently Groq (default `https://api.groq.com/openai/v1/chat/completions`) |
+| `LLM_MODEL`           | no       | Model id (default `openai/gpt-oss-120b`)                       |
 | `LLM_TIMEOUT_MS`      | no       | Timeout for the LLM call (default `20000`)                     |
 
 ## Tests
@@ -51,4 +52,5 @@ cross-cutting behaviors.
 
 Any option works per the task brief. This instance is exposed via
 `<see submission email>`; no database or external service is required beyond
-an optional `ANTHROPIC_API_KEY` for the `llm` provider.
+an optional `LLM_API_KEY` for the `llm` provider (OpenAI-compatible endpoint,
+currently Groq).

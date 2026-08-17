@@ -75,7 +75,7 @@ HTTP/SSE (96 assertions, `npm test`). What it checks, mapped to what's scored:
   rules including `MOCK-INJ` on one crafted diff.
 - **llm graceful failure** was checked manually (not in the automated
   suite, since it needs no credentials by design): submitting with
-  `"provider": "llm"` and no `ANTHROPIC_API_KEY` set yields
+  `"provider": "llm"` and no `LLM_API_KEY` set yields
   `status: "failed"` with a clear `error.message`, `200` on the GET, no
   crash.
 
