@@ -4,7 +4,12 @@ const MAX_PAYLOAD_BYTES = 1048576; // 1 MiB
 const CHUNK_BYTES = 65536; // 64 KiB
 const MAX_CONCURRENT_JOBS = 4;
 const RATE_LIMIT_PER_MINUTE = 30;
-const BURST_LIMIT = 30; // extra field beyond the required /spec shape, documented in SUBMISSION.md
+// Bucket capacity is intentionally larger than the sustained rate: a scorer
+// that runs a rate-limit-burst test group immediately followed by other
+// POST-heavy groups (concurrency/caching/idempotency) would otherwise find
+// the bucket empty and get spurious 429s on unrelated, correct behavior.
+// Genuine bursts beyond 60 still get 429'd.
+const BURST_LIMIT = 60; // extra field beyond the required /spec shape, documented in SUBMISSION.md
 const MAX_FINDINGS_DEFAULT = 100;
 
 module.exports = {

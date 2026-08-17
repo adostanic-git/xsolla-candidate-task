@@ -1,0 +1,8 @@
+node_modules
+.git
+.run
+.env
+test
+CANDIDATE-TASK.md
+SUBMISSION.md
+README.md

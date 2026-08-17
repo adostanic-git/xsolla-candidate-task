@@ -24,6 +24,12 @@ const bucket = new TokenBucket(config.BURST_LIMIT, config.RATE_LIMIT_PER_MINUTE)
 const queue = new ConcurrentQueue(config.MAX_CONCURRENT_JOBS);
 const startedAt = Date.now();
 
+// cacheKey -> Promise<cacheEntry|null>, resolved once the first job for that
+// key finishes. Lets identical requests submitted before the first one
+// completes join its result (cacheHit: true) instead of redoing the work
+// and racing to populate contentCache themselves.
+const inFlightByCacheKey = new Map();
+
 // --- public routes ---
 
 app.get('/health', (req, res) => {
@@ -72,6 +78,11 @@ function rateLimitMiddleware(req, res, next) {
 
 const jsonParser = express.json({
   limit: config.MAX_PAYLOAD_BYTES,
+  // Parse the body as JSON regardless of the Content-Type header, so a
+  // malformed body without (or with the wrong) Content-Type still hits the
+  // JSON parser and yields a 400 invalid_json instead of silently falling
+  // through as an empty body and mis-reporting as 422 invalid_diff.
+  type: () => true,
   verify: (req, res, buf) => {
     req.rawBody = buf;
   },
@@ -105,8 +116,12 @@ app.post('/v1/reviews', rateLimitMiddleware, jsonParser, (req, res) => {
     const existing = idempotencyKeys.get(idKey);
     if (existing) {
       if (existing.bodyHash === rawBodyHash) {
-        const existingJob = jobs.get(existing.jobId);
-        return res.status(202).json({ jobId: existing.jobId, status: existingJob ? existingJob.status : 'queued' });
+        // The contract for POST /v1/reviews is always `202 -> { jobId, status:
+        // "queued" }` - this is a replay of that acceptance response, not a
+        // status lookup, so it must report "queued" even if the original job
+        // has since moved on to running/done/failed. Use GET /v1/reviews/:id
+        // to observe actual progress.
+        return res.status(202).json({ jobId: existing.jobId, status: 'queued' });
       }
       return sendError(res, 409, 'idempotency_conflict', 'Idempotency-Key already used with a different request body');
     }
@@ -122,6 +137,10 @@ app.post('/v1/reviews', rateLimitMiddleware, jsonParser, (req, res) => {
     options: normalizedOptions,
     cacheKey,
     createdAt: Date.now(),
+    // inputBytes is known immediately; chunks/cacheHit are filled in once
+    // processing actually starts. Set up front so GET reports usage from
+    // the moment a job is queued, not only once it reaches done/failed.
+    usage: { inputBytes: Buffer.byteLength(diff, 'utf8'), chunks: 0, cacheHit: false },
   };
   jobs.set(jobId, job);
 
@@ -135,7 +154,28 @@ app.post('/v1/reviews', rateLimitMiddleware, jsonParser, (req, res) => {
   if (cached) {
     setImmediate(() => finalizeFromCache(job, cached));
   } else {
-    queue.push(() => processJob(job));
+    const inFlight = inFlightByCacheKey.get(cacheKey);
+    if (inFlight) {
+      inFlight.then((result) => {
+        if (result) {
+          finalizeFromCache(job, result);
+        } else {
+          queue.push(() => processJob(job));
+        }
+      });
+    } else {
+      let resolveInFlight;
+      const inFlightPromise = new Promise((resolve) => {
+        resolveInFlight = resolve;
+      });
+      inFlightByCacheKey.set(cacheKey, inFlightPromise);
+      queue.push(() =>
+        processJob(job).then(() => {
+          inFlightByCacheKey.delete(cacheKey);
+          resolveInFlight(job.status === 'done' ? contentCache.get(cacheKey) : null);
+        })
+      );
+    }
   }
 });
 

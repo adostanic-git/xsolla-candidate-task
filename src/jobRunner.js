@@ -43,6 +43,7 @@ function finalizeFromCache(job, cached) {
   job.findings = cached.findings;
   job.usage = { ...cached.usage, cacheHit: true };
   job.status = 'done';
+  channel.emitEvent('status', { status: 'done' });
   channel.emitEvent('done', { total: job.findings.length, usage: job.usage });
 }
 
@@ -92,6 +93,7 @@ async function processJob(job) {
       usage: { inputBytes: usage.inputBytes, chunks: usage.chunks },
     });
 
+    channel.emitEvent('status', { status: 'done' });
     channel.emitEvent('done', { total: truncated.length, usage });
   } catch (err) {
     job.status = 'failed';

@@ -4,6 +4,7 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
+const config = require('../src/config');
 
 const PORT = 3999;
 const TOKEN = 'smoke-test-token';
@@ -213,6 +214,20 @@ async function main() {
       assert(JSON.stringify(res1.findings) === JSON.stringify(res2.findings), 'cached findings identical');
     }
 
+    console.log('\n== caching (parallel identical submissions) ==');
+    {
+      const diff = makeDiff({ file: 'src/parallel-cache.ts', lines: ['console.log("race me");'] });
+      const body = JSON.stringify({ diff, options: { provider: 'mock' } });
+      const post = () => fetch(`${BASE}/v1/reviews`, { method: 'POST', headers: authed({ 'Content-Type': 'application/json' }), body });
+      const [pr1, pr2] = await Promise.all([post(), post()]);
+      const [{ jobId: pj1 }, { jobId: pj2 }] = await Promise.all([pr1.json(), pr2.json()]);
+      assert(pj1 !== pj2, 'parallel identical submissions still get distinct jobIds');
+      const [pres1, pres2] = await Promise.all([pollJob(pj1), pollJob(pj2)]);
+      const cacheHits = [pres1.usage.cacheHit, pres2.usage.cacheHit].sort();
+      assert(JSON.stringify(cacheHits) === JSON.stringify([false, true]), 'exactly one of two parallel identical jobs does the real work, the other joins as a cache hit');
+      assert(JSON.stringify(pres1.findings) === JSON.stringify(pres2.findings), 'parallel jobs produce identical findings');
+    }
+
     console.log('\n== idempotency ==');
     {
       const diff = makeDiff({ file: 'src/idem.ts', lines: ['console.log("idem");'] });
@@ -291,7 +306,8 @@ async function main() {
     {
       let got429 = false;
       let retryAfterHeaderSeen = false;
-      for (let i = 0; i < 40; i++) {
+      const burstAttempts = config.BURST_LIMIT + 10;
+      for (let i = 0; i < burstAttempts; i++) {
         const diff = makeDiff({ file: `src/rl${i}.ts`, lines: ['console.log("rl");'] });
         const res = await fetch(`${BASE}/v1/reviews`, {
           method: 'POST',

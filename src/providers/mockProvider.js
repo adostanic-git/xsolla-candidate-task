@@ -7,11 +7,12 @@ const INJECTION_RE = /ignore previous instructions|disregard all prior|you are n
 
 const SQL_KEYWORDS = 'SELECT|INSERT|UPDATE|DELETE';
 // A quoted string containing a SQL keyword, immediately adjacent (before or
-// after) to a '+' concatenation operator.
+// after) to a '+' concatenation operator - including the '+=' compound
+// assignment form (e.g. `sql += "INSERT INTO ..."`).
 const SQL_CONCAT_RE = new RegExp(
-  `(['"\`])(?:(?!\\1).)*\\b(?:${SQL_KEYWORDS})\\b(?:(?!\\1).)*\\1\\s*\\+` +
+  `(['"\`])(?:(?!\\1).)*\\b(?:${SQL_KEYWORDS})\\b(?:(?!\\1).)*\\1\\s*\\+=?` +
     `|` +
-    `\\+\\s*(['"\`])(?:(?!\\2).)*\\b(?:${SQL_KEYWORDS})\\b(?:(?!\\2).)*\\2`,
+    `\\+=?\\s*(['"\`])(?:(?!\\2).)*\\b(?:${SQL_KEYWORDS})\\b(?:(?!\\2).)*\\2`,
   'i'
 );
 
@@ -52,7 +53,9 @@ function findEmptyCatchFindings(path, addedLines) {
   const findings = [];
   for (let i = 0; i < addedLines.length; i++) {
     const { line, text } = addedLines[i];
-    if (!/\bcatch\s*\(/.test(text)) continue;
+    // The parameter list is optional (ES2019 "optional catch binding":
+    // `catch {}` is valid alongside `catch (e) {}`).
+    if (!/\bcatch\b\s*(\([^)]*\))?\s*\{/.test(text)) continue;
     const catchIdx = text.indexOf('catch');
     const openIdx = text.indexOf('{', catchIdx);
     if (openIdx === -1) continue; // brace not on this line: unsupported shape

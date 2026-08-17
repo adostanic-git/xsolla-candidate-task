@@ -13,7 +13,9 @@ findings, dedupes by `id`, sorts by `path → line → ruleId`, truncates to
 `maxFindings`, and finalizes the job. Every state transition and finding is
 also appended to a per-job in-memory event log (`src/sse.js`) that both live
 SSE subscribers and later "replay" connections read from. A token-bucket
-(`src/rateLimiter.js`) guards `POST /v1/reviews` only.
+(`src/rateLimiter.js`) guards `POST /v1/reviews` only. A `Dockerfile` +
+`.dockerignore` are included for a reproducible build/deploy independent of
+whatever tunnel is used during the scoring window.
 
 ## Provider design
 
@@ -47,7 +49,7 @@ violations — all six findings still came back, in order, nothing suppressed.
 ## Verifying the cross-cutting behaviors
 
 `test/smoke.js` spawns the real server as a child process and drives it over
-HTTP/SSE (65 assertions, `npm test`). What it checks, mapped to what's scored:
+HTTP/SSE (96 assertions, `npm test`). What it checks, mapped to what's scored:
 
 - **Chunking** — a 6-file/121 KB diff packs into 2 chunks (verified file
   boundaries are respected, no file split); all 1500 expected findings
@@ -62,7 +64,7 @@ HTTP/SSE (65 assertions, `npm test`). What it checks, mapped to what's scored:
   the same `jobId`; same key + a one-byte-different body returns `409`.
 - **SSE + replay** — captured the full event stream for a finished job,
   reconnected, captured it again, asserted the two captures are
-  byte-for-byte identical JSON (status → finding × N → done).
+  byte-for-byte identical JSON (status → finding × N → status → done).
 - **Concurrency** — fired 5 jobs at once against a limit of 4 and confirmed
   all 5 (including the queued 5th) reach `done`.
 - **Rate limiting** — burst-submitted until a `429` appeared, confirmed
@@ -79,7 +81,7 @@ HTTP/SSE (65 assertions, `npm test`). What it checks, mapped to what's scored:
 
 Two real bugs were caught this way, not by inspection: an initial
 `BURST_LIMIT` of 10 caused unrelated later assertions to get spuriously
-`429`'d during the suite itself (fixed by raising it to 30, see below), and
+`429`'d during the suite itself (fixed by raising it to 60, see below), and
 `usage.chunks` was reported as `0` on a failed job because it was only
 attached to the job record after the provider loop succeeded (fixed by
 attaching it right after chunking, before any provider call).
@@ -134,5 +136,3 @@ listed below for "more time," not something I think is actually unnecessary.
   instead of a single attempt + timeout.
 - A `/metrics` endpoint (queue depth, cache hit rate, provider latency) —
   useful for exactly the kind of production service this task is modeling.
-- A Dockerfile for a fully reproducible deploy, independent of the tunnel
-  used for this submission's scoring window.
